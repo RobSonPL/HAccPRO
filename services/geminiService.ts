@@ -2,30 +2,25 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { HACCPData } from "../types";
 
+// Function to generate full HACCP content using Gemini
 export const generateAIHACCPContent = async (data: HACCPData) => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const model = 'gemini-3-flash-preview';
   
   const prompt = `
-    Jesteś starszym ekspertem ds. HACCP i Sanepidu w Polsce. Wygeneruj profesjonalną dokumentację typu: ${data.docType}.
-    Nazwa firmy: ${data.details.name}
+    Jesteś ekspertem ds. systemów HACCP, GHP i GMP w Polsce. 
+    Przygotuj profesjonalną dokumentację sanitarną dla firmy: ${data.details.name}.
+    Typ dokumentu: ${data.docType}
     Branża: ${data.category}
-    Wyposażenie: ${data.equipment.map(e => e.name).join(', ')}
-    Etapy procesu (z opisami użytkownika): ${data.stages.map(s => s.name + " (" + s.description + ")").join(', ')}
-    Produkty/Potrawy: ${data.menuOrProducts.join(', ')}
-    Analiza zagrożeń produktów (wpisana przez użytkownika): ${data.productHazards.map(h => `${h.productName}: B[${h.biological}], C[${h.chemical}], F[${h.physical}]`).join('; ')}
-    Warunki pracy: Temp. ${data.workingConditions.temperature}, Wilgotność ${data.workingConditions.humidity}, Przewiew ${data.workingConditions.ventilation}.
-    Alergeny: ${data.allergenMatrix.map(a => a.productName + ": " + a.allergens.join(", ")).join('; ')}
+    Wyposażenie techniczne: ${data.equipment.map(e => e.name).join(', ')}
+    Dostawcy: ${data.suppliers.map(s => s.name + " (produkty: " + s.products + ")").join(', ')}
+    Specyfika mycia GHP: ${data.ghpDetails.map(g => `${g.equipmentName}: ${g.frequency} przy użyciu ${g.cleaningAgent}`).join('; ')}
+    Etapy procesu produkcyjnego: ${data.stages.map(s => s.name + " (" + s.description + ")").join(', ')}
+    Produkty i ich kategorie: ${data.menuOrProducts.map(p => p.name + " [" + p.type + "]").join(', ')}
+    Zidentyfikowane zagrożenia: ${data.productHazards.map(h => `${h.productName}: B[${h.biological}], C[${h.chemical}], F[${h.physical}]`).join('; ')}
     
-    Zwróć odpowiedź w formacie JSON z kluczami:
-    1. "summary": Profesjonalny wstęp prawniczy.
-    2. "ghpInstructions": Lista obiektów (device, action, agent, frequency) dla urządzeń.
-    3. "ccps": Lista obiektów (title, hazard, monitoring, criticalLimits, correctiveActions). Uwzględnij typowe CCP dla branży.
-    4. "allergenTable": Lista obiektów (dish, allergensDescription) z opisem.
-    5. "hazardAnalysis": Lista obiektów (categoryName, dishName, biological, chemical, physical [tablice stringów]). Wykorzystaj manualne zagrożenia od użytkownika jako bazę.
-    6. "flowDiagram": ASCII diagram przepływu.
-
-    Jeśli wybrano tylko GHP, skup się na instrukcjach sanitarnych. Jeśli HACCP, na analizie zagrożeń i CCP.
+    Wymagania techniczne odpowiedzi:
+    Zwróć WYŁĄCZNIE poprawny JSON o określonej strukturze.
   `;
 
   try {
@@ -59,17 +54,8 @@ export const generateAIHACCPContent = async (data: HACCPData) => {
                   hazard: { type: Type.STRING },
                   monitoring: { type: Type.STRING },
                   criticalLimits: { type: Type.STRING },
-                  correctiveActions: { type: Type.STRING }
-                }
-              }
-            },
-            allergenTable: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  dish: { type: Type.STRING },
-                  allergensDescription: { type: Type.STRING }
+                  correctiveActions: { type: Type.STRING },
+                  hazardType: { type: Type.STRING }
                 }
               }
             },
@@ -86,6 +72,16 @@ export const generateAIHACCPContent = async (data: HACCPData) => {
                 }
               }
             },
+            sops: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  title: { type: Type.STRING },
+                  content: { type: Type.STRING }
+                }
+              }
+            },
             flowDiagram: { type: Type.STRING }
           }
         }
@@ -98,42 +94,175 @@ export const generateAIHACCPContent = async (data: HACCPData) => {
   }
 };
 
+// Function to suggest allergens for a list of products
 export const suggestAllergens = async (dishes: string[]) => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const model = 'gemini-3-flash-preview';
-  const prompt = `Dla listy potraw: ${dishes.join(', ')}, wskaż prawdopodobne alergeny. Zwróć JSON: { "suggestions": [ { "dish": "nazwa", "allergens": ["alergen1", "alergen2"] } ] }`;
+  const prompt = `Jesteś ekspertem ds. jakości. Dla listy potraw: ${dishes.join(', ')}, wskaż WSZYSTKIE możliwe alergeny z 14 głównych grup zgodnie z Rozp. 1169/2011.`;
   try {
-    const response = await ai.models.generateContent({ model, contents: prompt, config: { responseMimeType: "application/json" } });
-    return JSON.parse(response.text).suggestions;
+    const response = await ai.models.generateContent({ 
+      model, 
+      contents: prompt, 
+      config: { 
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            suggestions: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  dish: { type: Type.STRING },
+                  allergens: { type: Type.ARRAY, items: { type: Type.STRING } }
+                }
+              }
+            }
+          }
+        }
+      } 
+    });
+    const parsed = JSON.parse(response.text);
+    return parsed.suggestions || [];
   } catch (e) { return []; }
 };
 
+// Function to suggest typical dishes based on category
 export const suggestDishes = async (category: string) => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const model = 'gemini-3-flash-preview';
-  const prompt = `Zaproponuj 10 najczęstszych potraw dla kategorii: ${category}. Zwróć JSON: { "dishes": ["Danie 1", "Danie 2", ...] }`;
+  const prompt = `Zaproponuj listę 30 typowych potraw/produktów dla kategorii: ${category}. Przypisz im kategorię: mięsne, nabiałowe, wegetariańskie lub inne.`;
   try {
-    const response = await ai.models.generateContent({ model, contents: prompt, config: { responseMimeType: "application/json" } });
-    return JSON.parse(response.text).dishes;
+    const response = await ai.models.generateContent({ 
+      model, 
+      contents: prompt, 
+      config: { 
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            dishes: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  name: { type: Type.STRING },
+                  type: { type: Type.STRING }
+                }
+              }
+            }
+          }
+        }
+      } 
+    });
+    const parsed = JSON.parse(response.text);
+    return parsed.dishes || [];
   } catch (e) { return []; }
 };
 
-export const suggestProductHazards = async (dishes: string[]) => {
+// Function to suggest SOPs based on category
+export const suggestSOPsByCategory = async (category: string) => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const model = 'gemini-3-flash-preview';
-  const prompt = `Dla potraw: ${dishes.join(', ')}, wskaż po jednym głównym zagrożeniu biologicznym, chemicznym i fizycznym. Zwróć JSON: { "hazards": [ { "productName": "nazwa", "biological": "opis", "chemical": "opis", "physical": "opis" } ] }`;
+  const prompt = `Wygeneruj listę 6 kluczowych procedur SOP (np. Mycie rąk, Przyjęcie dostawy) dla branży ${category}.`;
   try {
-    const response = await ai.models.generateContent({ model, contents: prompt, config: { responseMimeType: "application/json" } });
-    return JSON.parse(response.text).hazards;
+    const response = await ai.models.generateContent({ 
+      model, 
+      contents: prompt, 
+      config: { 
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            sops: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  title: { type: Type.STRING },
+                  content: { type: Type.STRING }
+                }
+              }
+            }
+          }
+        }
+      } 
+    });
+    const parsed = JSON.parse(response.text);
+    return parsed.sops || [];
   } catch (e) { return []; }
 };
 
+// Fixed: Added missing suggestProductHazards implementation
+export const suggestProductHazards = async (productNames: string[]) => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const model = 'gemini-3-flash-preview';
+  const prompt = `Jesteś ekspertem ds. jakości żywności. Dla poniższych produktów: ${productNames.join(', ')}, zaproponuj potencjalne zagrożenia biologiczne, chemiczne i fizyczne.`;
+  try {
+    const response = await ai.models.generateContent({
+      model,
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            hazards: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  productName: { type: Type.STRING },
+                  biological: { type: Type.STRING },
+                  chemical: { type: Type.STRING },
+                  physical: { type: Type.STRING }
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+    const parsed = JSON.parse(response.text);
+    return parsed.hazards || [];
+  } catch (e) {
+    console.error("AI Error:", e);
+    return [];
+  }
+};
+
+// Fixed: Added missing suggestStages implementation
 export const suggestStages = async (category: string) => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const model = 'gemini-3-flash-preview';
-  const prompt = `Zaproponuj co najmniej 4 kluczowe etapy produkcji/przygotowania żywności dla branży: ${category}. Podaj nazwę i krótki profesjonalny opis. Zwróć JSON: { "stages": [ { "name": "nazwa", "description": "opis" } ] }`;
+  const prompt = `Zaproponuj standardowe etapy procesu produkcyjnego dla branży: ${category}.`;
   try {
-    const response = await ai.models.generateContent({ model, contents: prompt, config: { responseMimeType: "application/json" } });
-    return JSON.parse(response.text).stages;
-  } catch (e) { return []; }
+    const response = await ai.models.generateContent({
+      model,
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            stages: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  name: { type: Type.STRING },
+                  description: { type: Type.STRING }
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+    const parsed = JSON.parse(response.text);
+    return parsed.stages || [];
+  } catch (e) {
+    console.error("AI Error:", e);
+    return [];
+  }
 };

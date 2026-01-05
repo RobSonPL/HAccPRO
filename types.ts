@@ -8,6 +8,11 @@ export enum HACCPCategory {
 
 export type DocType = 'HACCP' | 'GHP' | 'GMP' | 'HACCP + GHP';
 
+export interface ProductEntry {
+  name: string;
+  type: 'mięsne' | 'nabiałowe' | 'wegetariańskie' | 'inne';
+}
+
 export interface ProductHazard {
   productName: string;
   biological: string;
@@ -44,6 +49,12 @@ export interface Supplier {
   contact: string;
 }
 
+export interface GHPDetail {
+  equipmentName: string;
+  frequency: string;
+  cleaningAgent: string;
+}
+
 export interface AllergenEntry {
   productName: string;
   allergens: string[];
@@ -55,6 +66,12 @@ export interface WorkingConditions {
   ventilation: string;
 }
 
+export interface SOPBlock {
+  id: string;
+  title: string;
+  content: string;
+}
+
 export interface HACCPData {
   category: HACCPCategory;
   docType: DocType;
@@ -64,10 +81,11 @@ export interface HACCPData {
     nip: string;
     representative: string;
   };
-  menuOrProducts: string[];
+  menuOrProducts: ProductEntry[];
   equipment: Equipment[];
   stages: ProductionStage[];
   suppliers: Supplier[];
+  ghpDetails: GHPDetail[];
   allergenMatrix: AllergenEntry[];
   productHazards: ProductHazard[];
   fleet: Vehicle[];
@@ -82,7 +100,7 @@ export interface HACCPData {
     allergens?: string[];
   };
   hazards: Hazard[];
-  sopBlocks: string[];
+  sopBlocks: SOPBlock[];
 }
 
 export interface Vehicle {
