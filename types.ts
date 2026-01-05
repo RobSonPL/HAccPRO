@@ -8,6 +8,13 @@ export enum HACCPCategory {
 
 export type DocType = 'HACCP' | 'GHP' | 'GMP' | 'HACCP + GHP';
 
+export interface ProductHazard {
+  productName: string;
+  biological: string;
+  chemical: string;
+  physical: string;
+}
+
 export interface Hazard {
   step: string;
   hazardType: 'Biologiczne' | 'Chemiczne' | 'Fizyczne';
@@ -62,6 +69,7 @@ export interface HACCPData {
   stages: ProductionStage[];
   suppliers: Supplier[];
   allergenMatrix: AllergenEntry[];
+  productHazards: ProductHazard[];
   fleet: Vehicle[];
   workingConditions: WorkingConditions;
   specifics: {

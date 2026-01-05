@@ -58,7 +58,7 @@ export const StepWizard: React.FC<StepWizardProps> = ({
             </>
           ) : (
             <>
-              {currentStep === totalSteps ? 'Zakończ i Generuj' : 'Dalej'} <i className="fa-solid fa-arrow-right ml-2"></i>
+              {currentStep === totalSteps ? 'Analizuj i Generuj' : 'Dalej'} <i className="fa-solid fa-arrow-right ml-2"></i>
             </>
           )}
         </button>
